@@ -101,8 +101,8 @@ steps:
 
  - script: |
     azcopy copy "https://sunghchostorageaccount.blob.core.windows.net/phi-3/phi-4-mini-instruct-01072025" --recursive "./build"
-  workingDirectory: $(Build.SourcesDirectory)
-  displayName: "Download model from azure blob"
+   workingDirectory: $(Build.SourcesDirectory)
+   displayName: "Download model from azure blob"
 
  - script: |
      docker run --gpus all --rm \
