@@ -3,22 +3,20 @@ parameters:
  - name: model_name
    displayName: mode name on huggingface website
    type: string
-   default: meta-llama/Llama-3.2-3B-Instruct
+   default: microsoft/phi-4-mini
 
-pool: onnxruntime-Linux-GPU-T4
+pool: onnxruntime-Linux-GPU-T4 #onnxruntime-tensorrt-linuxbuild-T4
 steps:
  - task: UsePythonVersion@0
    inputs:
-     versionSpec: '3.10'
+     versionSpec: '3.12'
      architecture: 'x64'
 
- - bash: |
-     pip install -r llama-requirements.txt
-   displayName: install the necessary packages
-   workingDirectory: $(Build.SourcesDirectory)
+#  - bash: |
+#      pip install -r llama-requirements.txt
+#    displayName: install the necessary packages
+#    workingDirectory: $(Build.SourcesDirectory)
 
-#  - script: pip install --pre azure-cli --extra-index-url https://azurecliprod.blob.core.windows.net/edge
-#    displayName: 'upgrade azure cli'
 
 #  - script: az --version
 #    displayName: 'Show Azure CLI version'
@@ -28,40 +26,136 @@ steps:
 #       azcopy cp --recursive "./hello.txt" 'https://sunghchostorageaccount.blob.core.windows.net/test'
 #       ls
 #    displayName: 'try azcopy upload to sun blob'
-
+ - bash: |
+    nvidia-smi
+   displayName: "dump nvidia-smi"
+ 
+#  - bash: |
+#     ls -l /usr
+#     nvcc --version
+#    displayName: "dump cuda version"
 
 #  - script: |
-#      az account list
-#      python -c "with open('hello-test.txt', 'w') as f:f.write('hello world')"
-#      azcopy cp --recursive "./hello-test.txt" 'https://sunghchostorageaccount.blob.core.windows.net/test'
-#      az ml data create --name testfile --version 1 --path './hello-test.txt' --registry-name model-publish-test --description "test file"
-#    displayName: "try upload to AzureML"
+#      mkdir output_model
+#      azcopy cp --recursive "https://sunghchostorageaccount.blob.core.windows.net/phi-3/phi-3.5-mini-instruct/onnx/cuda/cuda-int4-rtn-block-32" 'output_model/phi-3.5-mini-instruct-cuda-int4'
+#      ls -l output_model/phi-3.5-mini-instruct-cuda-int4/cuda-int4-rtn-block-32
+#      azcopy cp --recursive "https://sunghchostorageaccount.blob.core.windows.net/phi-3/phi-3.5-mini-instruct/hf_version" 'output_model/hf_version'
+#      ls -l output_model/hf_version
+#    displayName: "download model from blob"
+#    workingDirectory: $(Build.BinariesDirectory)
+
+#  - script: |
+#      # search for "genai_config.json" under folder "$(Build.BinariesDirectory)/output_model/"
+#      model_config_folder=`find $(Build.BinariesDirectory)/output_model/ -name genai_config.json -printf "%h\n"`
+#      baseline_model_folder=`find $(Build.BinariesDirectory)/output_model/ -name config.json -printf "%h\n"`
+
+#      # verify only one config is found
+#      num_models=`echo -n "$model_config_folder" | grep -c '^'`
+#      if [[ $num_models -ne 1 ]]; then
+#        echo "The output model folder should contains exactly one genai_config.json file, but found $num_models"
+#        exit 1
+#      fi
+
+#      echo "model folder: $model_config_folder"
+#      echo "baseline_model folder: $baseline_model_folder"
+
+#      docker run --gpus all --rm \
+#         --ipc=host \
+#         --volume $(Build.SourcesDirectory):/ort_src \
+#         --volume $(Build.BinariesDirectory):/build \
+#         --volume $model_config_folder:/model \
+#         --volume $baseline_model_folder:/baseline \
+#         -p 8000:8000 \
+#         -e CCACHE_DIR=/cache -w /ort_src \
+#         ptebic.azurecr.io/public/aifx/acpt/stable-ubuntu2004-cu121-py310-torch222:biweekly.202410.2 /bin/bash /ort_src/docker_script.sh
+#    workingDirectory: $(Build.SourcesDirectory)
+#    displayName: "start model endpoint and RAI eval in container"
 
 
 
+#  - bash: |
+#      echo Authenticate with Huggingface repository 
+
+#      huggingface-cli login --token $(hf_token)
+
+#    displayName: "Authentication to Huggingface repo" 
+
+
+# Replace "/" with "_" and convert to lowercase
+# Set the formatted checkpoint as an environment variable
  - bash: |
-     echo Authenticate with Huggingface repository 
+     echo "Processing checkpoint"
 
-     huggingface-cli login --token $(hf_token)
+     checkpoint="${{ parameters.model_name }}"
 
-   displayName: "Authentication to Huggingface repo" 
-
- - bash: |
-    pip list 
-   displayName: "dump pip list"
+    
+     formatted_checkpoint=$(echo "$checkpoint" | tr '/' '_' | tr '[:upper:]' '[:lower:]')
+     formatted_name=$(echo "$formatted_checkpoint" | tr '.' '_' | tr '[:upper:]' '[:lower:]')
 
 
- #- bash: |
- #   nvidia-smi
- #  displayName: "dump nvidia-smi"
+     echo "##vso[task.setvariable variable=formatted_checkpoint]$formatted_checkpoint"
+     echo "##vso[task.setvariable variable=formatted_name]$formatted_name"
+     echo "Formatted checkpoint: $formatted_checkpoint"
+     echo "Formatted name: $formatted_name"
+   displayName: "Process checkpoint"
 
- - script: | 
+ - script: |
+    azcopy copy "https://sunghchostorageaccount.blob.core.windows.net/phi-3/phi-4-mini-instruct-01072025" --recursive "./build"
+  workingDirectory: $(Build.SourcesDirectory)
+  displayName: "Download model from azure blob"
 
-     python $(Build.SourcesDirectory)/llama_model_builder.py --model_name '${{ parameters.model_name }}' --output_dir '$(Build.BinariesDirectory)'
-
-   displayName: "Convert Huggingface model to ONNX model"
-     
+ - script: |
+     docker run --gpus all --rm \
+        --ipc=host \
+        --volume $(Build.SourcesDirectory):/ort_src \
+        --volume $(Build.BinariesDirectory):/build \
+        -e CCACHE_DIR=/cache -w /ort_src \
+        -e HF_TOKEN=$(hf_token) \
+        -e MODEL_NAME=${{ parameters.model_name }} \
+        ptebic.azurecr.io/public/aifx/acpt/stable-ubuntu2004-cu121-py310-torch222:biweekly.202410.2 /bin/bash /ort_src/docker_export_model_script.sh
    workingDirectory: $(Build.SourcesDirectory)
+   displayName: "Export Onnx model by turnkey"
+
+
+ - script: |
+     # search for "genai_config.json" under folder "$(Build.BinariesDirectory)/oga_models/"
+     model_config_folder=`find $(Build.BinariesDirectory)/oga_models/ -name genai_config.json -printf "%h\n"`
+     
+
+     # verify only one config is found
+     num_models=`echo -n "$model_config_folder" | grep -c '^'`
+     if [[ $num_models -ne 1 ]]; then
+       echo "The output model folder should contains exactly one genai_config.json file, but found $num_models"
+       exit 1
+     fi
+
+     echo "model folder: $model_config_folder"
+     
+
+     docker run --gpus all --rm \
+        --ipc=host \
+        --volume $(Build.SourcesDirectory):/ort_src \
+        --volume $(Build.BinariesDirectory):/build \
+        --volume $model_config_folder:/model \
+        -p 8000:8000 \
+        -e CCACHE_DIR=/cache -w /ort_src \
+        ptebic.azurecr.io/public/aifx/acpt/stable-ubuntu2004-cu121-py310-torch222:biweekly.202410.2 /bin/bash /ort_src/docker_script.sh
+   workingDirectory: $(Build.SourcesDirectory)
+   displayName: "start model endpoint and RAI eval in container"
+
+#baseline_model_folder=`find $(Build.BinariesDirectory)/output_model/ -name config.json -printf "%h\n"`
+#echo "baseline_model folder: $baseline_model_folder"
+#--volume $baseline_model_folder:/baseline \
+
+
+
+#  - script: | 
+
+#      python $(Build.SourcesDirectory)/llama_model_builder.py --model_name '${{ parameters.model_name }}' --output_dir '$(Build.BinariesDirectory)'
+
+#    displayName: "Convert Huggingface model to ONNX model"
+     
+#    workingDirectory: $(Build.SourcesDirectory)
 
  - task: AzureCLI@2
    displayName: 'upload model to Blob Storage'
@@ -71,21 +165,21 @@ steps:
      scriptType: bash
      inlineScript: |
        cd $(Build.BinariesDirectory)
-       azcopy copy './models/${{ parameters.model_name }}/output_model/model' 'https://sunghchostorageaccount.blob.core.windows.net/test' --recursive
+       azcopy copy './oga_models' 'https://sunghchostorageaccount.blob.core.windows.net/test' --recursive
 
 
- - task: AzureCLI@2
-   displayName: 'upload model to AzureML registry'
-   inputs:
-     azureSubscription: AIInfraBuild
-     scriptLocation: inlineScript
-     scriptType: bash
-     inlineScript: |
-       cd $(Build.BinariesDirectory)
-       az extension add -n ml -y
-       az extension list
-       az account list
-       az ml data create --name llama32-3b-instruct-for-test-only --version 1 --path './models/${{ parameters.model_name }}/output_model/model' --registry-name model-publish-test --description "llama3.2-3b-instruct-test-only from pipeline"
+#  - task: AzureCLI@2
+#    displayName: 'upload model to AzureML registry'
+#    inputs:
+#      azureSubscription: AIInfraBuild
+#      scriptLocation: inlineScript
+#      scriptType: bash
+#      inlineScript: |
+#        cd $(Build.BinariesDirectory)
+#        az extension add -n ml -y
+#        az extension list
+#        az account list
+#        az ml data create --name llama32-3b-instruct-for-test-only --version 1 --path './models/${{ parameters.model_name }}/output_model/model' --registry-name model-publish-test --description "llama3.2-3b-instruct-test-only from pipeline"
 
 
 #- bash: |

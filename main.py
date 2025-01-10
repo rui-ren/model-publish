@@ -6,9 +6,15 @@ import argparse
 
 app = FastAPI()
 
+import os
+print("### ENV in main.py (server)")
+print(os.environ)
+
+
 # Initialize the model, tokenizer, and tokenizer stream
 # Please update the DML model here
-model = og.Model('./models/meta-llama/Llama-3.2-3B-Instruct/output_model/model')
+#model = og.Model('/model')
+model = og.Model('/model')
 tokenizer = og.Tokenizer(model)
 tokenizer_stream = tokenizer.create_stream()
 
