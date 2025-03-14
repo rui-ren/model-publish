@@ -5,7 +5,7 @@ parameters:
    type: string
    default: microsoft/phi-4-mini
 
-pool: olive-1es-pool-ubuntu2004-gpu-v100-eastus
+pool: copilot-laptop
 steps:
  - task: UsePythonVersion@0
    inputs:
