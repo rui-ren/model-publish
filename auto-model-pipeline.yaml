@@ -5,7 +5,7 @@ parameters:
    type: string
    default: microsoft/phi-4-mini
 
-pool: Onnxruntime-Linux-A10-24G #onnxruntime-tensorrt-linuxbuild-T4
+pool: copilot-laptop
 steps:
  - task: UsePythonVersion@0
    inputs:
